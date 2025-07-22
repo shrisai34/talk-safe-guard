@@ -23,6 +23,7 @@ interface SpeechRecognition {
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
+  resultIndex: number;
 }
 
 interface SpeechRecognitionErrorEvent {
@@ -31,10 +32,12 @@ interface SpeechRecognitionErrorEvent {
 
 interface SpeechRecognitionResultList {
   [index: number]: SpeechRecognitionResult;
+  length: number;
 }
 
 interface SpeechRecognitionResult {
   [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
 }
 
 interface SpeechRecognitionAlternative {
@@ -79,27 +82,62 @@ export const VoiceBot = () => {
     const recognition = new SpeechRecognition();
     
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
       setIsListening(true);
       setTranscript('');
       setResponse('');
+      toast({
+        title: "Listening",
+        description: "Speak your question now...",
+      });
     };
 
     recognition.onresult = (event) => {
-      const spokenText = event.results[0][0].transcript.toLowerCase();
-      setTranscript(spokenText);
-      processQuestion(spokenText);
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
+      }
+      
+      if (finalTranscript) {
+        const spokenText = finalTranscript.toLowerCase().trim();
+        setTranscript(spokenText);
+        processQuestion(spokenText);
+        recognition.stop();
+      }
     };
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
+      
+      let errorMessage = "Could not process your speech. Please try again.";
+      
+      switch (event.error) {
+        case 'network':
+          errorMessage = "Network error. Please check your internet connection and try again.";
+          break;
+        case 'not-allowed':
+          errorMessage = "Microphone access denied. Please allow microphone access and try again.";
+          break;
+        case 'no-speech':
+          errorMessage = "No speech detected. Please speak clearly and try again.";
+          break;
+        case 'audio-capture':
+          errorMessage = "Microphone not found. Please check your microphone and try again.";
+          break;
+        case 'service-not-allowed':
+          errorMessage = "Speech service not available. Please try again later.";
+          break;
+      }
+      
       toast({
         title: "Speech Recognition Error",
-        description: "Could not process your speech. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
     };
@@ -109,7 +147,18 @@ export const VoiceBot = () => {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error('Failed to start recognition:', error);
+      setIsListening(false);
+      toast({
+        title: "Recognition Failed",
+        description: "Could not start speech recognition. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   const stopListening = () => {
